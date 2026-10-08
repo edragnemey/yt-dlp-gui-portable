@@ -1,5 +1,7 @@
 # YtDlpGUI Portable
 
+[![Clean Windows portable test](https://github.com/edragnemey/yt-dlp-gui-portable/actions/workflows/clean-windows-portable-test.yml/badge.svg)](https://github.com/edragnemey/yt-dlp-gui-portable/actions/workflows/clean-windows-portable-test.yml)
+
 一个适用于 Windows 的简洁中文 yt-dlp 图形界面。发布包内置 yt-dlp、FFmpeg、FFprobe 和 Deno；目标电脑不需要安装 Python，也不需要配置环境变量，解压后双击即可运行。
 
 ## 功能
@@ -21,6 +23,19 @@
 2. 下载 `YtDlpGUI-v*-windows-x64.zip`。
 3. 解压整个 ZIP；不要只单独取出 EXE。
 4. 双击 `YtDlpGUI.exe`。
+
+## 全新 Windows 环境验证
+
+项目包含可重复运行的隔离测试。测试在 GitHub 提供的全新 Windows 虚拟机上完成以下步骤：
+
+- 从公开 Release 下载成品 ZIP 并核对 SHA-256；
+- 使用一个无法调用 `python` 或 `py` 的最小化环境；
+- 启动 `YtDlpGUI.exe` 并确认进程持续响应；
+- 仅使用 ZIP 内的工具下载一段公开测试视频；
+- 使用内置 FFprobe 检查下载文件的媒体时长；
+- 上传测试证据文件。
+
+[查看已通过的全新 Windows 测试](https://github.com/edragnemey/yt-dlp-gui-portable/actions/runs/37779258694)
 
 便携包目录结构：
 
