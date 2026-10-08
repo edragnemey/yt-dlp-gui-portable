@@ -1,5 +1,6 @@
 param(
-    [string]$Version = '1.1.0'
+    [string]$Version = '1.1.0',
+    [string]$PythonCommand = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,12 +22,21 @@ function Resolve-RequiredTool {
     return $command.Source
 }
 
-if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
-    throw 'Python Launcher (py.exe) was not found. Python 3.10+ is required to build.'
+if ($PythonCommand) {
+    $pythonExecutable = $PythonCommand
+    $pythonPrefixArgs = @()
+} elseif (Get-Command py -ErrorAction SilentlyContinue) {
+    $pythonExecutable = 'py'
+    $pythonPrefixArgs = @('-3.13')
+} elseif (Get-Command python -ErrorAction SilentlyContinue) {
+    $pythonExecutable = 'python'
+    $pythonPrefixArgs = @()
+} else {
+    throw 'Python 3.10+ was not found.'
 }
 
 & (Join-Path $PSScriptRoot 'make_icon.ps1') | Out-Null
-& py -3 -m PyInstaller --noconfirm --clean --onefile --windowed `
+& $pythonExecutable @pythonPrefixArgs -m PyInstaller --noconfirm --clean --onefile --windowed `
     --name YtDlpGUI `
     --icon $iconPath `
     --distpath (Join-Path $buildRoot 'app') `

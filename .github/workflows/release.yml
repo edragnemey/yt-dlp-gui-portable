@@ -50,7 +50,7 @@ jobs:
         shell: pwsh
         run: |
           $version = if ('${{ github.ref_type }}' -eq 'tag') { '${{ github.ref_name }}'.TrimStart('v') } else { '1.1.0' }
-          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-portable.ps1 -Version $version
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-portable.ps1 -Version $version -PythonCommand python
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
