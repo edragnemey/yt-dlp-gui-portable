@@ -1,0 +1,66 @@
+name: Build portable release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install build tools
+        shell: pwsh
+        run: python -m pip install --upgrade pyinstaller
+
+      - name: Download portable dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path .deps/tools | Out-Null
+
+          curl.exe -L --fail --output .deps/tools/yt-dlp.exe `
+            https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe
+
+          curl.exe -L --fail --output .deps/deno.zip `
+            https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip
+          Expand-Archive -LiteralPath .deps/deno.zip -DestinationPath .deps/deno
+          Copy-Item -LiteralPath .deps/deno/deno.exe -Destination .deps/tools/deno.exe
+
+          curl.exe -L --fail --output .deps/ffmpeg.zip `
+            https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
+          Expand-Archive -LiteralPath .deps/ffmpeg.zip -DestinationPath .deps/ffmpeg
+          $ffmpeg = Get-ChildItem .deps/ffmpeg -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          $ffprobe = Get-ChildItem .deps/ffmpeg -Recurse -Filter ffprobe.exe | Select-Object -First 1
+          Copy-Item -LiteralPath $ffmpeg.FullName -Destination .deps/tools/ffmpeg.exe
+          Copy-Item -LiteralPath $ffprobe.FullName -Destination .deps/tools/ffprobe.exe
+          (Resolve-Path .deps/tools).Path | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build portable package
+        shell: pwsh
+        run: |
+          $version = if ('${{ github.ref_type }}' -eq 'tag') { '${{ github.ref_name }}'.TrimStart('v') } else { '1.1.0' }
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-portable.ps1 -Version $version
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: YtDlpGUI-windows-x64
+          path: dist/*.zip
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
