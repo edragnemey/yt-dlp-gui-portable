@@ -1,0 +1,105 @@
+name: Clean Windows portable test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-test:
+    runs-on: windows-latest
+    steps:
+      - name: Download published portable release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://github.com/edragnemey/yt-dlp-gui-portable/releases/download/v1.1.0/YtDlpGUI-v1.1.0-windows-x64.zip'
+          curl.exe -L --fail --output portable.zip $url
+          Expand-Archive -LiteralPath portable.zip -DestinationPath portable
+          $package = Get-ChildItem portable -Directory | Select-Object -First 1
+          if (-not $package) { throw 'Portable package directory was not found.' }
+          "PACKAGE_DIR=$($package.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify published checksum
+        shell: pwsh
+        run: |
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath portable.zip).Hash
+          $expected = 'E1E90440380447F62A18B4572FCFB6A54CDCE1FE42A7624BACE270E35A156212'
+          "Published ZIP SHA-256: $actual"
+          if ($actual -ne $expected) { throw 'Published ZIP checksum mismatch.' }
+
+      - name: Create environment without Python
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $cleanPath = @(
+            "$env:SystemRoot\System32",
+            "$env:SystemRoot",
+            "$env:SystemRoot\System32\Wbem"
+          ) -join ';'
+          "CLEAN_PATH=$cleanPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $env:Path = $cleanPath
+          if (Get-Command python -ErrorAction SilentlyContinue) { throw 'python unexpectedly exists in the clean PATH.' }
+          if (Get-Command py -ErrorAction SilentlyContinue) { throw 'py unexpectedly exists in the clean PATH.' }
+          'Verified: neither python nor py is available in the clean environment.'
+
+      - name: Start GUI without Python
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:Path = $env:CLEAN_PATH
+          $exe = Join-Path $env:PACKAGE_DIR 'YtDlpGUI.exe'
+          $process = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 8
+          $process.Refresh()
+          if ($process.HasExited) { throw "GUI exited unexpectedly with code $($process.ExitCode)." }
+          "GUI started without Python. PID=$($process.Id), Responding=$($process.Responding)"
+          Stop-Process -Id $process.Id -Force
+
+      - name: Download and verify public media using only bundled tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tools = Join-Path $env:PACKAGE_DIR 'tools'
+          $env:Path = "$tools;$env:CLEAN_PATH"
+          if (Get-Command python -ErrorAction SilentlyContinue) { throw 'python unexpectedly became available.' }
+          if (Get-Command py -ErrorAction SilentlyContinue) { throw 'py unexpectedly became available.' }
+
+          $output = Join-Path $env:RUNNER_TEMP 'portable-download'
+          New-Item -ItemType Directory -Force -Path $output | Out-Null
+          & (Join-Path $tools 'yt-dlp.exe') `
+            --no-config `
+            --no-playlist `
+            -P $output `
+            -o 'downloaded.%(ext)s' `
+            'https://media.w3.org/2010/05/sintel/trailer.mp4'
+          if ($LASTEXITCODE -ne 0) { throw "yt-dlp download failed with exit code $LASTEXITCODE." }
+
+          $media = Get-ChildItem -LiteralPath $output -File | Select-Object -First 1
+          if (-not $media -or $media.Length -lt 100000) { throw 'Downloaded media is missing or unexpectedly small.' }
+          $duration = & (Join-Path $tools 'ffprobe.exe') `
+            -v error `
+            -show_entries format=duration `
+            -of default=noprint_wrappers=1:nokey=1 `
+            $media.FullName
+          if ($LASTEXITCODE -ne 0 -or -not $duration) { throw 'Bundled ffprobe could not validate the download.' }
+
+          $proof = @(
+            'Clean Windows portable test: PASS',
+            'System Python command: unavailable',
+            "GUI executable: started and remained running",
+            "Downloaded file: $($media.Name)",
+            "Downloaded bytes: $($media.Length)",
+            "Media duration seconds: $duration",
+            "yt-dlp version: $(& (Join-Path $tools 'yt-dlp.exe') --version)",
+            "FFmpeg version: $((& (Join-Path $tools 'ffmpeg.exe') -version 2>&1 | Select-Object -First 1))",
+            "Deno version: $((& (Join-Path $tools 'deno.exe') --version 2>&1 | Select-Object -First 1))"
+          )
+          $proof | Tee-Object -FilePath portable-test-proof.txt
+
+      - name: Upload verification proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: clean-windows-portable-test-proof
+          path: portable-test-proof.txt
